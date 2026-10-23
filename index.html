@@ -1,0 +1,806 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Versus Ranker Game (Elo Edition)</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans antialiased selection:bg-indigo-500 selection:text-white">
+
+    <!-- Header -->
+    <header class="bg-slate-900 border-b border-slate-800 sticky top-0 z-30 shadow-lg">
+        <div class="max-w-4xl mx-auto px-4 py-3 flex flex-wrap justify-between items-center gap-3">
+            <div class="flex items-center space-x-3 cursor-pointer" onclick="switchTab('categories')">
+                <div class="bg-gradient-to-tr from-indigo-600 to-violet-500 p-2.5 rounded-xl shadow-md shadow-indigo-500/20">
+                    <i class="fa-solid fa-gamepad text-white text-lg"></i>
+                </div>
+                <div>
+                    <h1 class="font-bold text-lg tracking-tight text-white">Versus Ranker</h1>
+                    <p class="text-xs text-slate-400">Local Elo Matchmaker</p>
+                </div>
+            </div>
+
+            <!-- Navigation Tabs -->
+            <div class="flex bg-slate-950 p-1 rounded-xl border border-slate-800">
+                <button onclick="switchTab('categories')" id="nav-categories" class="px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 text-slate-300">
+                    <i class="fa-solid fa-folder-open mr-1"></i> Categories
+                </button>
+                <button onclick="switchTab('play')" id="nav-play" class="px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 text-slate-300">
+                    <i class="fa-solid fa-play mr-1"></i> Play
+                </button>
+                <button onclick="switchTab('leaderboard')" id="nav-leaderboard" class="px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 text-slate-300">
+                    <i class="fa-solid fa-trophy mr-1"></i> Leaderboard
+                </button>
+            </div>
+
+            <!-- Backup & Restore Buttons -->
+            <div class="flex items-center gap-2">
+                <button onclick="exportData()" title="Export Backup JSON" class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-2.5 py-1.5 rounded-lg text-xs border border-slate-700 transition flex items-center gap-1">
+                    <i class="fa-solid fa-download"></i> <span class="hidden sm:inline">Export</span>
+                </button>
+                <label title="Import Backup JSON" class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-2.5 py-1.5 rounded-lg text-xs border border-slate-700 transition flex items-center gap-1 cursor-pointer">
+                    <i class="fa-solid fa-upload"></i> <span class="hidden sm:inline">Import</span>
+                    <input type="file" id="importFile" accept=".json" onchange="importData(event)" class="hidden">
+                </label>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="max-w-4xl mx-auto px-4 py-6 flex-1 w-full">
+
+        <!-- TAB 1: CATEGORIES -->
+        <section id="tab-categories" class="space-y-6">
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
+                <h2 id="form-title" class="text-base font-semibold text-white mb-4 flex items-center gap-2">
+                    <i class="fa-solid fa-circle-plus text-indigo-500"></i> Add New Category
+                </h2>
+                <form id="category-form" onsubmit="saveCategory(event)" class="space-y-4">
+                    <input type="hidden" id="edit-category-id">
+                    <div>
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Category Name</label>
+                        <input type="text" id="cat-name" required placeholder="e.g., Marvel Movies, Programming Languages" 
+                            class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Items / Names (Separated by commas)</label>
+                        <textarea id="cat-items" required rows="3" placeholder="Iron Man, Thor, Captain America, Hulk..." 
+                            class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition"></textarea>
+                    </div>
+                    <div class="flex gap-2">
+                        <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 text-white font-medium px-4 py-2 rounded-xl text-xs transition shadow-lg shadow-indigo-600/30">
+                            Save Category
+                        </button>
+                        <button type="button" id="cancel-edit-btn" onclick="resetCategoryForm()" class="hidden bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium px-4 py-2 rounded-xl text-xs transition">
+                            Cancel
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Categories List -->
+            <div class="space-y-3">
+                <h3 class="text-sm font-semibold uppercase tracking-wider text-slate-400 px-1">Your Categories</h3>
+                <div id="categories-list" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <!-- Populated via JS -->
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 2: PLAY -->
+        <section id="tab-play" class="hidden space-y-6">
+            <!-- Mode Selector / Category Picker if not chosen -->
+            <div id="play-setup" class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl text-center space-y-4">
+                <div class="w-12 h-12 bg-indigo-500/10 text-indigo-400 rounded-2xl flex items-center justify-center mx-auto text-xl">
+                    <i class="fa-solid fa-gamepad"></i>
+                </div>
+                <div>
+                    <h2 class="text-lg font-bold text-white">Select Category & Game Mode</h2>
+                    <p class="text-xs text-slate-400 mt-1">Choose a category and format to start your Elo matchmaking session.</p>
+                </div>
+                <div class="max-w-md mx-auto space-y-3 text-left">
+                    <div>
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Category</label>
+                        <select id="play-cat-select" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition">
+                            <!-- Populated via JS -->
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Match Type</label>
+                        <div class="grid grid-cols-2 gap-3">
+                            <button type="button" onclick="startSession('1v1')" class="bg-slate-950 border border-slate-800 hover:border-indigo-500 p-3 rounded-xl text-center transition group">
+                                <span class="block font-bold text-sm text-white group-hover:text-indigo-400">1 v 1</span>
+                                <span class="block text-[10px] text-slate-400 mt-0.5">Head-to-head duel</span>
+                            </button>
+                            <button type="button" onclick="startSession('2v2')" class="bg-slate-950 border border-slate-800 hover:border-indigo-500 p-3 rounded-xl text-center transition group">
+                                <span class="block font-bold text-sm text-white group-hover:text-indigo-400">2 v 2</span>
+                                <span class="block text-[10px] text-slate-400 mt-0.5">Team battle (Requires 4+ items)</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Active Match Arena -->
+            <div id="match-arena" class="hidden space-y-4">
+                <!-- Status Bar -->
+                <div class="bg-slate-900 border border-slate-800 rounded-xl p-3.5 flex flex-wrap justify-between items-center gap-3 text-xs">
+                    <div>
+                        <span id="arena-cat-title" class="font-bold text-white text-sm"></span>
+                        <span id="arena-mode-badge" class="ml-2 px-2 py-0.5 bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded-md font-medium">1v1</span>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <span id="arena-phase-badge" class="px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-md font-medium">Phase 1: Baseline</span>
+                        <span id="arena-progress-text" class="text-slate-400">Match 1</span>
+                        <button onclick="quitMatch()" class="text-slate-400 hover:text-red-400 transition" title="Quit Session">
+                            <i class="fa-solid fa-xmark text-sm"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Progress Bar -->
+                <div class="w-full bg-slate-900 rounded-full h-2 overflow-hidden border border-slate-800">
+                    <div id="arena-progress-bar" class="bg-indigo-600 h-full transition-all duration-300" style="width: 0%"></div>
+                </div>
+
+                <!-- Match Cards Arena -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <!-- Choice A -->
+                    <button onclick="handleMatchChoice('A')" id="card-a" class="bg-slate-900 hover:bg-indigo-950/40 border border-slate-800 hover:border-indigo-500/80 rounded-2xl p-8 text-center transition-all duration-200 shadow-xl group flex flex-col justify-center items-center min-h-[180px]">
+                        <span class="text-xs font-bold text-indigo-400 uppercase tracking-widest mb-2 group-hover:scale-105 transition">Option A</span>
+                        <h3 id="label-a" class="text-xl font-bold text-white group-hover:text-indigo-200 transition">--</h3>
+                        <span id="elo-a" class="text-xs text-slate-500 mt-2">Elo: 1200</span>
+                    </button>
+
+                    <!-- Choice B -->
+                    <button onclick="handleMatchChoice('B')" id="card-b" class="bg-slate-900 hover:bg-violet-950/40 border border-slate-800 hover:border-violet-500/80 rounded-2xl p-8 text-center transition-all duration-200 shadow-xl group flex flex-col justify-center items-center min-h-[180px]">
+                        <span class="text-xs font-bold text-violet-400 uppercase tracking-widest mb-2 group-hover:scale-105 transition">Option B</span>
+                        <h3 id="label-b" class="text-xl font-bold text-white group-hover:text-violet-200 transition">--</h3>
+                        <span id="elo-b" class="text-xs text-slate-500 mt-2">Elo: 1200</span>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 3: LEADERBOARD -->
+        <section id="tab-leaderboard" class="hidden space-y-4">
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl flex flex-wrap justify-between items-center gap-3">
+                <div class="flex flex-wrap items-center gap-3">
+                    <div>
+                        <label class="block text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1">Category</label>
+                        <select id="lb-cat-select" onchange="renderLeaderboard()" class="bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 transition">
+                            <!-- Populated via JS -->
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1">Mode Filter</label>
+                        <select id="lb-mode-select" onchange="renderLeaderboard()" class="bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 transition">
+                            <option value="overall">Overall Elo</option>
+                            <option value="1v1">1v1 Elo Only</option>
+                            <option value="2v2">2v2 Elo Only</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-2">
+                    <button onclick="openResetModal()" class="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 px-3 py-1.5 rounded-xl text-xs transition font-medium">
+                        <i class="fa-solid fa-rotate-right mr-1"></i> Reset Stats
+                    </button>
+                </div>
+            </div>
+
+            <!-- Leaderboard Table -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="border-b border-slate-800 text-[11px] font-semibold uppercase tracking-wider text-slate-400 bg-slate-950/50">
+                                <th class="p-3.5 text-center w-12">Rank</th>
+                                <th class="p-3.5">Item Name</th>
+                                <th class="p-3.5 text-center">Elo Rating</th>
+                                <th class="p-3.5 text-center">Played</th>
+                                <th class="p-3.5 text-center">Record (W-L)</th>
+                                <th class="p-3.5 text-center">Win %</th>
+                            </tr>
+                        </thead>
+                        <tbody id="leaderboard-body" class="divide-y divide-slate-800/60 text-xs">
+                            <!-- Populated via JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- RESET MODAL -->
+    <div id="reset-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-sm w-full space-y-4 shadow-2xl">
+            <h3 class="font-bold text-base text-white">Reset Leaderboard & Stats</h3>
+            <p class="text-xs text-slate-400">Choose how you want to reset stats for <span id="reset-modal-cat-name" class="font-semibold text-white"></span>. Item lists will remain intact.</p>
+            
+            <div class="space-y-2 pt-2">
+                <button onclick="confirmReset('single')" class="w-full bg-slate-800 hover:bg-slate-700 text-white font-medium p-2.5 rounded-xl text-xs transition text-left flex items-center justify-between">
+                    <span>Reset This Category Only</span>
+                    <i class="fa-solid fa-angle-right text-slate-500"></i>
+                </button>
+                <button onclick="confirmReset('all')" class="w-full bg-red-600/20 hover:bg-red-600/30 text-red-300 font-medium p-2.5 rounded-xl text-xs transition text-left flex items-center justify-between border border-red-500/30">
+                    <span>Reset ALL Categories</span>
+                    <i class="fa-solid fa-angle-right text-red-400"></i>
+                </button>
+            </div>
+            
+            <button onclick="closeResetModal()" class="w-full bg-transparent hover:bg-slate-800 text-slate-400 font-medium py-2 rounded-xl text-xs transition mt-2">
+                Cancel
+            </button>
+        </div>
+    </div>
+
+    <!-- JavaScript Application Logic -->
+    <script>
+        // State Management
+        let appData = {
+            categories: {}, // id -> { name, items: [], stats: { itemName: { elo1v1, elo2v2, matches1v1, wins1v1, losses1v1, matches2v2, wins2v2, losses2v2 } } }
+            sessions: {}   // catId -> { mode, history: [] }
+        };
+
+        let currentTab = 'categories';
+        let activeSession = null; // { catId, mode, currentMatch }
+
+        const DEFAULT_ELO = 1200;
+        const K_FACTOR = 32;
+
+        // Initialize App
+        window.addEventListener('DOMContentLoaded', () => {
+            loadFromLocalStorage();
+            switchTab('categories');
+        });
+
+        function saveToLocalStorage() {
+            localStorage.setItem('versus_elo_data', JSON.stringify(appData));
+        }
+
+        function loadFromLocalStorage() {
+            const saved = localStorage.getItem('versus_elo_data');
+            if (saved) {
+                try {
+                    appData = JSON.parse(saved);
+                } catch (e) {
+                    console.error("Failed to load local storage", e);
+                }
+            }
+        }
+
+        // Tab Switching
+        function switchTab(tab) {
+            currentTab = tab;
+            ['categories', 'play', 'leaderboard'].forEach(t => {
+                document.getElementById(`tab-${t}`).classList.add('hidden');
+                document.getElementById(`nav-${t}`).classList.remove('bg-indigo-600', 'text-white', 'shadow-md');
+                document.getElementById(`nav-${t}`).classList.add('text-slate-300');
+            });
+
+            document.getElementById(`tab-${tab}`).classList.remove('hidden');
+            document.getElementById(`nav-${tab}`).classList.add('bg-indigo-600', 'text-white', 'shadow-md');
+            document.getElementById(`nav-${tab}`).classList.remove('text-slate-300');
+
+            if (tab === 'categories') renderCategories();
+            if (tab === 'play') updatePlayDropdowns();
+            if (tab === 'leaderboard') updateLeaderboardDropdowns();
+        }
+
+        // Category Management
+        function saveCategory(e) {
+            e.preventDefault();
+            const editId = document.getElementById('edit-category-id').value;
+            const name = document.getElementById('cat-name').value.trim();
+            const rawItems = document.getElementById('cat-items').value;
+
+            // Clean, trim, deduplicate, and sort alphabetically
+            const itemsSet = new Set();
+            rawItems.split(',').forEach(item => {
+                const clean = item.trim();
+                if (clean) itemsSet.add(clean);
+            });
+            const items = Array.from(itemsSet).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'accent' }));
+
+            if (items.length < 2) {
+                alert("Please provide at least 2 valid items separated by commas.");
+                return;
+            }
+
+            const catId = editId || 'cat_' + Date.now();
+            
+            // Retain or initialize stats
+            if (!appData.categories[catId]) {
+                appData.categories[catId] = { name, items: [], stats: {} };
+            } else {
+                appData.categories[catId].name = name;
+            }
+
+            appData.categories[catId].items = items;
+            
+            // Ensure stats exist for all items
+            items.forEach(item => {
+                if (!appData.categories[catId].stats[item]) {
+                    appData.categories[catId].stats[item] = {
+                        elo1v1: DEFAULT_ELO, matches1v1: 0, wins1v1: 0, losses1v1: 0,
+                        elo2v2: DEFAULT_ELO, matches2v2: 0, wins2v2: 0, losses2v2: 0
+                    };
+                }
+            });
+
+            saveToLocalStorage();
+            resetCategoryForm();
+            renderCategories();
+        }
+
+        function resetCategoryForm() {
+            document.getElementById('category-form').reset();
+            document.getElementById('edit-category-id').value = '';
+            document.getElementById('form-title').innerHTML = '<i class="fa-solid fa-circle-plus text-indigo-500"></i> Add New Category';
+            document.getElementById('cancel-edit-btn').classList.add('hidden');
+        }
+
+        function editCategory(catId) {
+            const cat = appData.categories[catId];
+            if (!cat) return;
+            document.getElementById('edit-category-id').value = catId;
+            document.getElementById('cat-name').value = cat.name;
+            document.getElementById('cat-items').value = cat.items.join(', ');
+            document.getElementById('form-title').innerHTML = '<i class="fa-solid fa-pen-to-square text-indigo-500"></i> Edit Category';
+            document.getElementById('cancel-edit-btn').classList.remove('hidden');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function deleteCategory(catId) {
+            if (confirm("Are you sure you want to delete this category?")) {
+                delete appData.categories[catId];
+                delete appData.sessions[catId];
+                saveToLocalStorage();
+                renderCategories();
+            }
+        }
+
+        function renderCategories() {
+            const container = document.getElementById('categories-list');
+            const catIds = Object.keys(appData.categories);
+
+            if (catIds.length === 0) {
+                container.innerHTML = `
+                    <div class="col-span-full bg-slate-900 border border-slate-800 rounded-2xl p-8 text-center text-slate-500 text-xs">
+                        No categories created yet. Create your first category above!
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = catIds.map(id => {
+                const cat = appData.categories[id];
+                return `
+                    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between gap-3 shadow-lg">
+                        <div>
+                            <div class="flex justify-between items-start">
+                                <h3 class="font-bold text-white text-sm">${escapeHtml(cat.name)}</h3>
+                                <div class="flex items-center gap-1.5">
+                                    <button onclick="editCategory('${id}')" class="text-slate-400 hover:text-indigo-400 p-1 transition" title="Edit">
+                                        <i class="fa-solid fa-pen text-xs"></i>
+                                    </button>
+                                    <button onclick="deleteCategory('${id}')" class="text-slate-400 hover:text-red-400 p-1 transition" title="Delete">
+                                        <i class="fa-solid fa-trash text-xs"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <p class="text-xs text-slate-400 mt-1 line-clamp-2">${escapeHtml(cat.items.join(', '))}</p>
+                        </div>
+                        <div class="flex items-center justify-between pt-2 border-t border-slate-800 text-[11px] text-slate-500">
+                            <span>${cat.items.length} items</span>
+                            <button onclick="quickStartPlay('${id}')" class="text-indigo-400 hover:text-indigo-300 font-medium flex items-center gap-1">
+                                Play <i class="fa-solid fa-arrow-right text-[10px]"></i>
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function quickStartPlay(catId) {
+            switchTab('play');
+            document.getElementById('play-cat-select').value = catId;
+        }
+
+        function updatePlayDropdowns() {
+            const select = document.getElementById('play-cat-select');
+            const catIds = Object.keys(appData.categories);
+            
+            if (catIds.length === 0) {
+                select.innerHTML = '<option value="">No categories available</option>';
+                return;
+            }
+
+            select.innerHTML = catIds.map(id => `<option value="${id}">${escapeHtml(appData.categories[id].name)}</option>`).join('');
+            
+            // If active session exists, show arena
+            if (activeSession) {
+                document.getElementById('play-setup').classList.add('hidden');
+                document.getElementById('match-arena').classList.remove('hidden');
+                renderMatch();
+            } else {
+                document.getElementById('play-setup').classList.remove('hidden');
+                document.getElementById('match-arena').classList.add('hidden');
+            }
+        }
+
+        // Match Engine & Two-Phase Elo Matchmaking
+        function startSession(mode) {
+            const catId = document.getElementById('play-cat-select').value;
+            if (!catId) {
+                alert("Please select a category first.");
+                return;
+            }
+
+            const cat = appData.categories[catId];
+            if (mode === '2v2' && cat.items.length < 4) {
+                alert("2v2 mode requires at least 4 items in the category.");
+                return;
+            }
+
+            activeSession = { catId, mode };
+            document.getElementById('play-setup').classList.add('hidden');
+            document.getElementById('match-arena').classList.remove('hidden');
+            renderMatch();
+        }
+
+        function quitMatch() {
+            activeSession = null;
+            document.getElementById('match-arena').classList.add('hidden');
+            document.getElementById('play-setup').classList.remove('hidden');
+        }
+
+        function getPhaseTarget(cat, mode) {
+            const N = cat.items.length;
+            // Phase 1 target: ~N/2 matches per item (min 3)
+            return Math.max(3, Math.floor(N / 2));
+        }
+
+        function renderMatch() {
+            if (!activeSession) return;
+            const cat = appData.categories[activeSession.catId];
+            const mode = activeSession.mode;
+            const statsKey = mode === '1v1' ? 'matches1v1' : 'matches2v2';
+
+            document.getElementById('arena-cat-title').textContent = cat.name;
+            document.getElementById('arena-mode-badge').textContent = mode;
+
+            // Calculate min matches played across items
+            let minPlayed = Infinity;
+            cat.items.forEach(item => {
+                const played = cat.stats[item][statsKey] || 0;
+                if (played < minPlayed) minPlayed = played;
+            });
+
+            const target = getPhaseTarget(cat, mode);
+            const isPhase1 = minPlayed < target;
+
+            const phaseBadge = document.getElementById('arena-phase-badge');
+            if (isPhase1) {
+                phaseBadge.textContent = `Phase 1: Baseline (${minPlayed}/${target})`;
+                phaseBadge.className = "px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-md font-medium text-[10px]";
+            } else {
+                phaseBadge.textContent = `Phase 2: Elo Refinement`;
+                phaseBadge.className = "px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-md font-medium text-[10px]";
+            }
+
+            // Pick Matchup
+            let match = generateMatchup(cat, mode, isPhase1);
+            activeSession.currentMatch = match;
+
+            if (mode === '1v1') {
+                document.getElementById('label-a').textContent = match.a;
+                document.getElementById('label-b').textContent = match.b;
+                document.getElementById('elo-a').textContent = `Elo: ${Math.round(cat.stats[match.a][mode === '1v1' ? 'elo1v1' : 'elo2v2'])}`;
+                document.getElementById('elo-b').textContent = `Elo: ${Math.round(cat.stats[match.b][mode === '1v1' ? 'elo1v1' : 'elo2v2'])}`;
+            } else {
+                document.getElementById('label-a').textContent = `${match.a1} & ${match.a2}`;
+                document.getElementById('label-b').textContent = `${match.b1} & ${match.b2}`;
+                
+                const avgEloA = Math.round((cat.stats[match.a1].elo2v2 + cat.stats[match.a2].elo2v2) / 2);
+                const avgEloB = Math.round((cat.stats[match.b1].elo2v2 + cat.stats[match.b2].elo2v2) / 2);
+                
+                document.getElementById('elo-a').textContent = `Team Elo: ${avgEloA}`;
+                document.getElementById('elo-b').textContent = `Team Elo: ${avgEloB}`;
+            }
+
+            // Total matches played progress estimation
+            let totalMatchesPlayed = 0;
+            cat.items.forEach(i => totalMatchesPlayed += (cat.stats[i][statsKey] || 0));
+            totalMatchesPlayed = Math.floor(totalMatchesPlayed / (mode === '1v1' ? 2 : 4));
+
+            document.getElementById('arena-progress-text').textContent = `Total Matches: ${totalMatchesPlayed}`;
+            document.getElementById('arena-progress-bar').style.width = `${Math.min(100, (minPlayed / target) * 100)}%`;
+        }
+
+        function generateMatchup(cat, mode, isPhase1) {
+            const items = cat.items;
+            const statsKey = mode === '1v1' ? 'matches1v1' : 'matches2v2';
+            const eloKey = mode === '1v1' ? 'elo1v1' : 'elo2v2';
+
+            if (mode === '1v1') {
+                // Pick item with fewest matches first in Phase 1, or random/elo-close in Phase 2
+                let sortedItems = [...items].sort((x, y) => (cat.stats[x][statsKey] || 0) - (cat.stats[y][statsKey] || 0));
+                let a = sortedItems[0];
+
+                let candidates = items.filter(i => i !== a);
+                if (!isPhase1) {
+                    // Sort candidates by Elo proximity to a
+                    candidates.sort((x, y) => Math.abs(cat.stats[x][eloKey] - cat.stats[a][eloKey]) - Math.abs(cat.stats[y][eloKey] - cat.stats[a][eloKey]));
+                } else {
+                    candidates.sort(() => Math.random() - 0.5);
+                }
+                let b = candidates[0];
+                return { a, b };
+            } else {
+                // 2v2: Pick 4 distinct items with duplicate exclusions across opposing teams
+                let sortedItems = [...items].sort((x, y) => (cat.stats[x][statsKey] || 0) - (cat.stats[y][statsKey] || 0));
+                let a1 = sortedItems[0];
+                
+                let rem1 = items.filter(i => i !== a1);
+                let a2 = rem1[Math.floor(Math.random() * rem1.length)];
+
+                let teamA = [a1, a2];
+                let remOpponents = items.filter(i => !teamA.includes(i));
+                
+                // Sort opposing candidates by least played or elo proximity
+                if (!isPhase1) {
+                    let avgEloA = (cat.stats[a1].elo2v2 + cat.stats[a2].elo2v2) / 2;
+                    remOpponents.sort((x, y) => Math.abs(cat.stats[x].elo2v2 - avgEloA) - Math.abs(cat.stats[y].elo2v2 - avgEloA));
+                } else {
+                    remOpponents.sort(() => Math.random() - 0.5);
+                }
+
+                let b1 = remOpponents[0];
+                let rem2 = remOpponents.filter(i => i !== b1);
+                let b2 = rem2[Math.floor(Math.random() * rem2.length)];
+
+                return { a1, a2, b1, b2 };
+            }
+        }
+
+        function handleMatchChoice(winnerSide) {
+            if (!activeSession) return;
+            const cat = appData.categories[activeSession.catId];
+            const mode = activeSession.mode;
+            const match = activeSession.currentMatch;
+
+            if (mode === '1v1') {
+                const itemA = match.a;
+                const itemB = match.b;
+                const winner = winnerSide === 'A' ? itemA : itemB;
+                const loser = winnerSide === 'A' ? itemB : itemA;
+
+                updateElo(cat, itemA, itemB, winnerSide === 'A' ? 1 : 0, '1v1');
+            } else {
+                const teamA = [match.a1, match.a2];
+                const teamB = [match.b1, match.b2];
+
+                const winnerTeam = winnerSide === 'A' ? teamA : teamB;
+                const loserTeam = winnerSide === 'A' ? teamB : teamA;
+
+                updateTeamElo(cat, winnerTeam, loserTeam);
+            }
+
+            saveToLocalStorage();
+            renderMatch();
+        }
+
+        function updateElo(cat, itemA, itemB, scoreA, modeType) {
+            const eloKey = modeType === '1v1' ? 'elo1v1' : 'elo2v2';
+            const matchesKey = modeType === '1v1' ? 'matches1v1' : 'matches2v2';
+            const winsKey = modeType === '1v1' ? 'wins1v1' : 'wins2v2';
+            const lossesKey = modeType === '1v1' ? 'losses1v1' : 'losses2v2';
+
+            const Ra = cat.stats[itemA][eloKey];
+            const Rb = cat.stats[itemB][eloKey];
+
+            const Ea = 1 / (1 + Math.pow(10, (Rb - Ra) / 400));
+            const Eb = 1 / (1 + Math.pow(10, (Ra - Rb) / 400));
+
+            const scoreB = 1 - scoreA;
+
+            cat.stats[itemA][eloKey] = Ra + K_FACTOR * (scoreA - Ea);
+            cat.stats[itemB][eloKey] = Rb + K_FACTOR * (scoreB - Eb);
+
+            cat.stats[itemA][matchesKey]++;
+            cat.stats[itemB][matchesKey]++;
+
+            if (scoreA === 1) {
+                cat.stats[itemA][winsKey]++;
+                cat.stats[itemB][lossesKey]++;
+            } else {
+                cat.stats[itemB][winsKey]++;
+                cat.stats[itemA][lossesKey]++;
+            }
+        }
+
+        function updateTeamElo(cat, teamA, teamB) {
+            const eloKey = 'elo2v2';
+            const matchesKey = 'matches2v2';
+            const winsKey = 'wins2v2';
+            const lossesKey = 'losses2v2';
+
+            const avgRa = (cat.stats[teamA[0]][eloKey] + cat.stats[teamA[1]][eloKey]) / 2;
+            const avgRb = (cat.stats[teamB[0]][eloKey] + cat.stats[teamB[1]][eloKey]) / 2;
+
+            const Ea = 1 / (1 + Math.pow(10, (avgRb - avgRa) / 400));
+            const Eb = 1 / (1 + Math.pow(10, (avgRa - avgRb) / 400));
+
+            // Update team A members
+            teamA.forEach(item => {
+                cat.stats[item][eloKey] += K_FACTOR * (1 - Ea);
+                cat.stats[item][matchesKey]++;
+                cat.stats[item][winsKey]++;
+            });
+
+            // Update team B members
+            teamB.forEach(item => {
+                cat.stats[item][eloKey] += K_FACTOR * (0 - Eb);
+                cat.stats[item][matchesKey]++;
+                cat.stats[item][lossesKey]++;
+            });
+        }
+
+        // Leaderboard
+        function updateLeaderboardDropdowns() {
+            const select = document.getElementById('lb-cat-select');
+            const catIds = Object.keys(appData.categories);
+            
+            if (catIds.length === 0) {
+                select.innerHTML = '<option value="">No categories available</option>';
+                document.getElementById('leaderboard-body').innerHTML = `<tr><td colspan="6" class="p-6 text-center text-slate-500">No data to display.</td></tr>`;
+                return;
+            }
+
+            select.innerHTML = catIds.map(id => `<option value="${id}">${escapeHtml(appData.categories[id].name)}</option>`).join('');
+            renderLeaderboard();
+        }
+
+        function renderLeaderboard() {
+            const catId = document.getElementById('lb-cat-select').value;
+            const modeFilter = document.getElementById('lb-mode-select').value;
+            const tbody = document.getElementById('leaderboard-body');
+
+            if (!catId || !appData.categories[catId]) {
+                tbody.innerHTML = `<tr><td colspan="6" class="p-6 text-center text-slate-500">Select a category.</td></tr>`;
+                return;
+            }
+
+            const cat = appData.categories[catId];
+            const items = cat.items;
+
+            // Map and sort items based on selected Elo metric
+            const rows = items.map(itemName => {
+                const st = cat.stats[itemName];
+                let elo, matches, wins, losses;
+
+                if (modeFilter === '1v1') {
+                    elo = st.elo1v1;
+                    matches = st.matches1v1;
+                    wins = st.wins1v1;
+                    losses = st.losses1v1;
+                } else if (modeFilter === '2v2') {
+                    elo = st.elo2v2;
+                    matches = st.matches2v2;
+                    wins = st.wins2v2;
+                    losses = st.losses2v2;
+                } else {
+                    // Overall average of 1v1 and 2v2 elo
+                    elo = (st.elo1v1 + st.elo2v2) / 2;
+                    matches = st.matches1v1 + st.matches2v2;
+                    wins = st.wins1v1 + st.wins2v2;
+                    losses = st.losses1v1 + st.losses2v2;
+                }
+
+                const winPct = matches > 0 ? Math.round((wins / matches) * 100) : 0;
+
+                return { itemName, elo: Math.round(elo), matches, wins, losses, winPct };
+            });
+
+            rows.sort((a, b) => b.elo - a.elo);
+
+            if (rows.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" class="p-6 text-center text-slate-500">No rankings recorded yet.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = rows.map((r, idx) => `
+                <tr class="hover:bg-slate-800/40 transition">
+                    <td class="p-3.5 text-center font-bold text-slate-400">#${idx + 1}</td>
+                    <td class="p-3.5 font-semibold text-white">${escapeHtml(r.itemName)}</td>
+                    <td class="p-3.5 text-center font-mono text-indigo-400 font-bold">${r.elo}</td>
+                    <td class="p-3.5 text-center text-slate-300">${r.matches}</td>
+                    <td class="p-3.5 text-center text-slate-300">${r.wins} - ${r.losses}</td>
+                    <td class="p-3.5 text-center text-slate-300">${r.winPct}%</td>
+                </tr>
+            `).join('');
+        }
+
+        // Reset Logic
+        function openResetModal() {
+            const catId = document.getElementById('lb-cat-select').value;
+            if (!catId) return;
+            const cat = appData.categories[catId];
+            document.getElementById('reset-modal-cat-name').textContent = cat.name;
+            document.getElementById('reset-modal').classList.remove('hidden');
+        }
+
+        function closeResetModal() {
+            document.getElementById('reset-modal').classList.add('hidden');
+        }
+
+        function confirmReset(scope) {
+            const catId = document.getElementById('lb-cat-select').value;
+            if (scope === 'single') {
+                const cat = appData.categories[catId];
+                cat.items.forEach(item => {
+                    cat.stats[item] = {
+                        elo1v1: DEFAULT_ELO, matches1v1: 0, wins1v1: 0, losses1v1: 0,
+                        elo2v2: DEFAULT_ELO, matches2v2: 0, wins2v2: 0, losses2v2: 0
+                    };
+                });
+            } else if (scope === 'all') {
+                Object.keys(appData.categories).forEach(id => {
+                    const cat = appData.categories[id];
+                    cat.items.forEach(item => {
+                        cat.stats[item] = {
+                            elo1v1: DEFAULT_ELO, matches1v1: 0, wins1v1: 0, losses1v1: 0,
+                            elo2v2: DEFAULT_ELO, matches2v2: 0, wins2v2: 0, losses2v2: 0
+                        };
+                    });
+                });
+            }
+            saveToLocalStorage();
+            closeResetModal();
+            renderLeaderboard();
+        }
+
+        // Export & Import Backup
+        function exportData() {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(appData, null, 2));
+            const dlAnchor = document.createElement('a');
+            dlAnchor.setAttribute("href", dataStr);
+            dlAnchor.setAttribute("download", `versus_elo_backup_${new Date().toISOString().slice(0, 10)}.json`);
+            document.body.appendChild(dlAnchor);
+            dlAnchor.click();
+            dlAnchor.remove();
+        }
+
+        function importData(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const imported = JSON.parse(e.target.result);
+                    if (imported && imported.categories) {
+                        appData = imported;
+                        saveToLocalStorage();
+                        alert("Data successfully imported!");
+                        switchTab(currentTab);
+                    } else {
+                        alert("Invalid backup file format.");
+                    }
+                } catch (err) {
+                    alert("Failed to parse JSON backup file.");
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function escapeHtml(str) {
+            return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+        }
+    </script>
+</body>
+</html>
