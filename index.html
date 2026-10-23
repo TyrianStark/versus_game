@@ -257,7 +257,7 @@
         };
 
         let currentTab = 'categories';
-        let activeSession = null; // { catIds: [], mode, currentMatch }
+        let activeSession = null; 
 
         const DEFAULT_ELO = 1200;
         const K_FACTOR = 32;
@@ -432,7 +432,7 @@
 
             container.innerHTML = catIds.map(id => `
                 <label class="flex items-center space-x-2 text-slate-300 cursor-pointer hover:text-white">
-                    <input type="checkbox" value="${id}" class="play-cat-cb rounded bg-slate-900 border-slate-700 text-indigo-600 focus:ring-indigo-500 h-4 w-4" checked>
+                    <input type="checkbox" id="play_cb_${id}" value="${id}" class="play-cat-cb rounded bg-slate-900 border-slate-700 text-indigo-600 focus:ring-indigo-500 h-4 w-4" checked>
                     <span class="truncate">${escapeHtml(appData.categories[id].name)}</span>
                 </label>
             `).join('');
@@ -458,7 +458,6 @@
                 return;
             }
 
-            // Check total item count across selected categories
             let totalItemsCount = 0;
             selectedCats.forEach(catId => totalItemsCount += appData.categories[catId].items.length);
 
@@ -489,7 +488,7 @@
                 if (cat) {
                     catNameLabels.push(cat.name);
                     cat.items.forEach(item => {
-                        pooledItems.push({ name: item, catId, stats: cat.stats[item] });
+                        pooledItems.push({ name: item, catId, catName: cat.name, stats: cat.stats[item] });
                     });
                 }
             });
@@ -527,13 +526,13 @@
             activeSession.currentMatch = match;
 
             if (mode === '1v1') {
-                document.getElementById('label-a').textContent = match.a.name;
-                document.getElementById('label-b').textContent = match.b.name;
+                document.getElementById('label-a').innerHTML = `${escapeHtml(match.a.name)} <span class="text-xs text-slate-400 font-normal">(${escapeHtml(match.a.catName)})</span>`;
+                document.getElementById('label-b').innerHTML = `${escapeHtml(match.b.name)} <span class="text-xs text-slate-400 font-normal">(${escapeHtml(match.b.catName)})</span>`;
                 document.getElementById('elo-a').textContent = `Elo: ${Math.round(match.a.stats.elo1v1)}`;
                 document.getElementById('elo-b').textContent = `Elo: ${Math.round(match.b.stats.elo1v1)}`;
             } else {
-                document.getElementById('label-a').textContent = `${match.a1.name} & ${match.a2.name}`;
-                document.getElementById('label-b').textContent = `${match.b1.name} & ${match.b2.name}`;
+                document.getElementById('label-a').innerHTML = `${escapeHtml(match.a1.name)} <span class="text-xs text-slate-400 font-normal">(${escapeHtml(match.a1.catName)})</span> & ${escapeHtml(match.a2.name)} <span class="text-xs text-slate-400 font-normal">(${escapeHtml(match.a2.catName)})</span>`;
+                document.getElementById('label-b').innerHTML = `${escapeHtml(match.b1.name)} <span class="text-xs text-slate-400 font-normal">(${escapeHtml(match.b1.catName)})</span> & ${escapeHtml(match.b2.name)} <span class="text-xs text-slate-400 font-normal">(${escapeHtml(match.b2.catName)})</span>`;
                 
                 const avgEloA = Math.round((match.a1.stats.elo2v2 + match.a2.stats.elo2v2) / 2);
                 const avgEloB = Math.round((match.b1.stats.elo2v2 + match.b2.stats.elo2v2) / 2);
@@ -650,7 +649,7 @@
             const avgRb = (teamB[0].stats[eloKey] + teamB[1].stats[eloKey]) / 2;
 
             const Ea = 1 / (1 + Math.pow(10, (avgRb - avgRa) / 400));
-            const Eb = 1 / (1 + Math.pow(10, (avgRa - avgRb) / 400));
+            const Eb = 1 / (1 + Math.pow(10, (Ra - Rb) / 400));
 
             teamA.forEach(itemObj => {
                 itemObj.stats[eloKey] += K_FACTOR * (1 - Ea);
@@ -820,7 +819,7 @@
             if (!file) return;
 
             if (!confirm("Importing a backup file will overwrite your current local storage data. Are you sure you want to continue?")) {
-                event.target.value = ''; // reset file input
+                event.target.value = '';
                 return;
             }
 
