@@ -276,10 +276,30 @@
             if (saved) {
                 try {
                     appData = JSON.parse(saved);
+                    // Migration check for older stats keys if necessary
+                    migratedataIfNeeded();
                 } catch (e) {
                     console.error("Failed to load local storage", e);
                 }
             }
+        }
+
+        function migratedataIfNeeded() {
+            // Ensure stats keys use itemKey (catId::itemName) format internally
+            Object.keys(appData.categories).forEach(catId => {
+                const cat = appData.categories[catId];
+                if (cat && cat.stats) {
+                    const newStats = {};
+                    cat.items.forEach(item => {
+                        const internalKey = `${catId}::${item}`;
+                        newStats[internalKey] = cat.stats[internalKey] || cat.stats[item] || {
+                            elo1v1: DEFAULT_ELO, matches1v1: 0, wins1v1: 0, losses1v1: 0,
+                            elo2v2: DEFAULT_ELO, matches2v2: 0, wins2v2: 0, losses2v2: 0
+                        };
+                    });
+                    cat.stats = newStats;
+                }
+            });
         }
 
         function switchTab(tab) {
@@ -319,6 +339,8 @@
 
             const catId = editId || 'cat_' + Date.now();
             
+            let existingStats = (appData.categories[catId] && appData.categories[catId].stats) ? appData.categories[catId].stats : {};
+
             if (!appData.categories[catId]) {
                 appData.categories[catId] = { name, items: [], stats: {} };
             } else {
@@ -327,14 +349,15 @@
 
             appData.categories[catId].items = items;
             
+            const newStats = {};
             items.forEach(item => {
-                if (!appData.categories[catId].stats[item]) {
-                    appData.categories[catId].stats[item] = {
-                        elo1v1: DEFAULT_ELO, matches1v1: 0, wins1v1: 0, losses1v1: 0,
-                        elo2v2: DEFAULT_ELO, matches2v2: 0, wins2v2: 0, losses2v2: 0
-                    };
-                }
+                const internalKey = `${catId}::${item}`;
+                newStats[internalKey] = existingStats[internalKey] || {
+                    elo1v1: DEFAULT_ELO, matches1v1: 0, wins1v1: 0, losses1v1: 0,
+                    elo2v2: DEFAULT_ELO, matches2v2: 0, wins2v2: 0, losses2v2: 0
+                };
             });
+            appData.categories[catId].stats = newStats;
 
             saveToLocalStorage();
             resetCategoryForm();
@@ -488,7 +511,14 @@
                 if (cat) {
                     catNameLabels.push(cat.name);
                     cat.items.forEach(item => {
-                        pooledItems.push({ name: item, catId, catName: cat.name, stats: cat.stats[item] });
+                        const internalKey = `${catId}::${item}`;
+                        pooledItems.push({ 
+                            name: item, 
+                            internalKey, 
+                            catId, 
+                            catName: cat.name, 
+                            stats: cat.stats[internalKey] 
+                        });
                     });
                 }
             });
@@ -557,7 +587,7 @@
                 let sortedItems = [...pooledItems].sort((x, y) => (x.stats[statsKey] || 0) - (y.stats[statsKey] || 0));
                 let a = sortedItems[0];
 
-                let candidates = pooledItems.filter(i => i.name !== a.name);
+                let candidates = pooledItems.filter(i => i.internalKey !== a.internalKey);
                 if (!isPhase1) {
                     candidates.sort((x, y) => Math.abs(x.stats[eloKey] - a.stats[eloKey]) - Math.abs(y.stats[eloKey] - a.stats[eloKey]));
                 } else {
@@ -569,11 +599,11 @@
                 let sortedItems = [...pooledItems].sort((x, y) => (x.stats[statsKey] || 0) - (y.stats[statsKey] || 0));
                 let a1 = sortedItems[0];
                 
-                let rem1 = pooledItems.filter(i => i.name !== a1.name);
+                let rem1 = pooledItems.filter(i => i.internalKey !== a1.internalKey);
                 let a2 = rem1[Math.floor(Math.random() * rem1.length)];
 
-                let teamANames = [a1.name, a2.name];
-                let remOpponents = pooledItems.filter(i => !teamANames.includes(i));
+                let teamAKeys = [a1.internalKey, a2.internalKey];
+                let remOpponents = pooledItems.filter(i => !teamAKeys.includes(i));
                 
                 if (!isPhase1) {
                     let avgEloA = (a1.stats.elo2v2 + a2.stats.elo2v2) / 2;
@@ -583,7 +613,7 @@
                 }
 
                 let b1 = remOpponents[0];
-                let rem2 = remOpponents.filter(i => i.name !== b1.name);
+                let rem2 = remOpponents.filter(i => i.internalKey !== b1.internalKey);
                 let b2 = rem2[Math.floor(Math.random() * rem2.length)];
 
                 return { a1, a2, b1, b2 };
@@ -649,7 +679,7 @@
             const avgRb = (teamB[0].stats[eloKey] + teamB[1].stats[eloKey]) / 2;
 
             const Ea = 1 / (1 + Math.pow(10, (avgRb - avgRa) / 400));
-            const Eb = 1 / (1 + Math.pow(10, (Ra - Rb) / 400));
+            const Eb = 1 / (1 + Math.pow(10, (avgRa - avgRb) / 400));
 
             teamA.forEach(itemObj => {
                 itemObj.stats[eloKey] += K_FACTOR * (1 - Ea);
@@ -709,7 +739,9 @@
                 const cat = appData.categories[catId];
                 if (!cat) return;
                 cat.items.forEach(itemName => {
-                    const st = cat.stats[itemName];
+                    const internalKey = `${catId}::${itemName}`;
+                    const st = cat.stats[internalKey];
+                    if (!st) return;
                     let elo, matches, wins, losses;
 
                     if (modeFilter === '1v1') {
@@ -778,8 +810,8 @@
                 selectedCats.forEach(catId => {
                     const cat = appData.categories[catId];
                     if (cat) {
-                        cat.items.forEach(item => {
-                            cat.stats[item] = {
+                        Object.keys(cat.stats).forEach(internalKey => {
+                            cat.stats[internalKey] = {
                                 elo1v1: DEFAULT_ELO, matches1v1: 0, wins1v1: 0, losses1v1: 0,
                                 elo2v2: DEFAULT_ELO, matches2v2: 0, wins2v2: 0, losses2v2: 0
                             };
@@ -790,8 +822,8 @@
                 if (!confirm("WARNING: Are you sure you want to reset ALL categories and stats? This cannot be undone.")) return;
                 Object.keys(appData.categories).forEach(id => {
                     const cat = appData.categories[id];
-                    cat.items.forEach(item => {
-                        cat.stats[item] = {
+                    Object.keys(cat.stats).forEach(internalKey => {
+                        cat.stats[internalKey] = {
                             elo1v1: DEFAULT_ELO, matches1v1: 0, wins1v1: 0, losses1v1: 0,
                             elo2v2: DEFAULT_ELO, matches2v2: 0, wins2v2: 0, losses2v2: 0
                         };
@@ -829,6 +861,7 @@
                     const imported = JSON.parse(e.target.result);
                     if (imported && imported.categories) {
                         appData = imported;
+                        migratedataIfNeeded();
                         saveToLocalStorage();
                         alert("Data successfully imported!");
                         switchTab(currentTab);
