@@ -253,7 +253,7 @@
     <script>
         let appData = {
             categories: {}, 
-            sessions: {}   
+            activeSession: null 
         };
 
         let currentTab = 'categories';
@@ -261,6 +261,7 @@
 
         const DEFAULT_ELO = 1200;
         const K_FACTOR = 32;
+        const BASELINE_TARGET = 15; // Universal Phase 1 target matches per item
 
         window.addEventListener('DOMContentLoaded', () => {
             loadFromLocalStorage();
@@ -268,6 +269,7 @@
         });
 
         function saveToLocalStorage() {
+            appData.activeSession = activeSession;
             localStorage.setItem('versus_elo_data', JSON.stringify(appData));
         }
 
@@ -276,8 +278,10 @@
             if (saved) {
                 try {
                     appData = JSON.parse(saved);
-                    // Migration check for older stats keys if necessary
                     migratedataIfNeeded();
+                    if (appData.activeSession) {
+                        activeSession = appData.activeSession;
+                    }
                 } catch (e) {
                     console.error("Failed to load local storage", e);
                 }
@@ -285,7 +289,6 @@
         }
 
         function migratedataIfNeeded() {
-            // Ensure stats keys use itemKey (catId::itemName) format internally
             Object.keys(appData.categories).forEach(catId => {
                 const cat = appData.categories[catId];
                 if (cat && cat.stats) {
@@ -338,7 +341,6 @@
             }
 
             const catId = editId || 'cat_' + Date.now();
-            
             let existingStats = (appData.categories[catId] && appData.categories[catId].stats) ? appData.categories[catId].stats : {};
 
             if (!appData.categories[catId]) {
@@ -385,7 +387,9 @@
         function deleteCategory(catId) {
             if (confirm("Are you sure you want to delete this category? This cannot be undone.")) {
                 delete appData.categories[catId];
-                delete appData.sessions[catId];
+                if (activeSession && activeSession.catIds.includes(catId)) {
+                    activeSession = null;
+                }
                 saveToLocalStorage();
                 renderCategories();
             }
@@ -490,6 +494,7 @@
             }
 
             activeSession = { catIds: selectedCats, mode };
+            saveToLocalStorage();
             document.getElementById('play-setup').classList.add('hidden');
             document.getElementById('match-arena').classList.remove('hidden');
             renderMatch();
@@ -498,6 +503,7 @@
         function quitMatch() {
             if (confirm("Are you sure you want to quit this game session? Progress up to now is saved.")) {
                 activeSession = null;
+                saveToLocalStorage();
                 document.getElementById('match-arena').classList.add('hidden');
                 document.getElementById('play-setup').classList.remove('hidden');
             }
@@ -506,19 +512,23 @@
         function getPooledItemsAndStats() {
             let pooledItems = [];
             let catNameLabels = [];
+            if (!activeSession || !activeSession.catIds) return { pooledItems, catNameLabels };
+
             activeSession.catIds.forEach(catId => {
                 const cat = appData.categories[catId];
                 if (cat) {
                     catNameLabels.push(cat.name);
                     cat.items.forEach(item => {
                         const internalKey = `${catId}::${item}`;
-                        pooledItems.push({ 
-                            name: item, 
-                            internalKey, 
-                            catId, 
-                            catName: cat.name, 
-                            stats: cat.stats[internalKey] 
-                        });
+                        if (cat.stats[internalKey]) {
+                            pooledItems.push({ 
+                                name: item, 
+                                internalKey, 
+                                catId, 
+                                catName: cat.name, 
+                                stats: cat.stats[internalKey] 
+                            });
+                        }
                     });
                 }
             });
@@ -528,6 +538,11 @@
         function renderMatch() {
             if (!activeSession) return;
             const { pooledItems, catNameLabels } = getPooledItemsAndStats();
+            if (pooledItems.length === 0) {
+                quitMatch();
+                return;
+            }
+
             const mode = activeSession.mode;
             const statsKey = mode === '1v1' ? 'matches1v1' : 'matches2v2';
 
@@ -540,12 +555,11 @@
                 if (played < minPlayed) minPlayed = played;
             });
 
-            const target = Math.max(3, Math.floor(pooledItems.length / 2));
-            const isPhase1 = minPlayed < target;
+            const isPhase1 = minPlayed < BASELINE_TARGET;
 
             const phaseBadge = document.getElementById('arena-phase-badge');
             if (isPhase1) {
-                phaseBadge.textContent = `Phase 1: Baseline (${minPlayed}/${target})`;
+                phaseBadge.textContent = `Phase 1: Baseline (${minPlayed}/${BASELINE_TARGET})`;
                 phaseBadge.className = "px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-md font-medium text-[10px]";
             } else {
                 phaseBadge.textContent = `Phase 2: Elo Refinement`;
@@ -553,7 +567,16 @@
             }
 
             let match = generatePooledMatchup(pooledItems, mode, isPhase1);
-            activeSession.currentMatch = match;
+            activeSession.currentMatch = {
+                mode: mode,
+                aKey: match.a ? match.a.internalKey : null,
+                bKey: match.b ? match.b.internalKey : null,
+                a1Key: match.a1 ? match.a1.internalKey : null,
+                a2Key: match.a2 ? match.a2.internalKey : null,
+                b1Key: match.b1 ? match.b1.internalKey : null,
+                b2Key: match.b2 ? match.b2.internalKey : null
+            };
+            saveToLocalStorage();
 
             if (mode === '1v1') {
                 document.getElementById('label-a').innerHTML = `${escapeHtml(match.a.name)} <span class="text-xs text-slate-400 font-normal">(${escapeHtml(match.a.catName)})</span>`;
@@ -576,7 +599,7 @@
             totalMatchesPlayed = Math.floor(totalMatchesPlayed / (mode === '1v1' ? 2 : 4));
 
             document.getElementById('arena-progress-text').textContent = `Total Matches: ${totalMatchesPlayed}`;
-            document.getElementById('arena-progress-bar').style.width = `${Math.min(100, (minPlayed / target) * 100)}%`;
+            document.getElementById('arena-progress-bar').style.width = `${Math.min(100, (minPlayed / BASELINE_TARGET) * 100)}%`;
         }
 
         function generatePooledMatchup(pooledItems, mode, isPhase1) {
@@ -620,21 +643,36 @@
             }
         }
 
+        function resolveItemObj(internalKey) {
+            for (let catId in appData.categories) {
+                const cat = appData.categories[catId];
+                if (cat && cat.stats && cat.stats[internalKey]) {
+                    const itemName = internalKey.split('::')[1];
+                    return { name: itemName, internalKey, catId, catName: cat.name, stats: cat.stats[internalKey] };
+                }
+            }
+            return null;
+        }
+
         function handleMatchChoice(winnerSide) {
-            if (!activeSession) return;
-            const mode = activeSession.mode;
-            const match = activeSession.currentMatch;
+            if (!activeSession || !activeSession.currentMatch) return;
+            const mode = activeSession.currentMatch.mode;
+            const cm = activeSession.currentMatch;
 
             if (mode === '1v1') {
-                const itemA = match.a;
-                const itemB = match.b;
-                updatePooledElo(itemA, itemB, winnerSide === 'A' ? 1 : 0, '1v1');
+                const itemA = resolveItemObj(cm.aKey);
+                const itemB = resolveItemObj(cm.bKey);
+                if (itemA && itemB) {
+                    updatePooledElo(itemA, itemB, winnerSide === 'A' ? 1 : 0, '1v1');
+                }
             } else {
-                const teamA = [match.a1, match.a2];
-                const teamB = [match.b1, match.b2];
-                const winnerTeam = winnerSide === 'A' ? teamA : teamB;
-                const loserTeam = winnerSide === 'A' ? teamB : teamA;
-                updatePooledTeamElo(winnerTeam, loserTeam);
+                const teamA = [resolveItemObj(cm.a1Key), resolveItemObj(cm.a2Key)].filter(Boolean);
+                const teamB = [resolveItemObj(cm.b1Key), resolveItemObj(cm.b2Key)].filter(Boolean);
+                if (teamA.length === 2 && teamB.length === 2) {
+                    const winnerTeam = winnerSide === 'A' ? teamA : teamB;
+                    const loserTeam = winnerSide === 'A' ? teamB : teamA;
+                    updatePooledTeamElo(winnerTeam, loserTeam);
+                }
             }
 
             saveToLocalStorage();
@@ -830,6 +868,7 @@
                     });
                 });
             }
+            activeSession = null;
             saveToLocalStorage();
             closeResetModal();
             renderLeaderboard();
@@ -862,6 +901,7 @@
                     if (imported && imported.categories) {
                         appData = imported;
                         migratedataIfNeeded();
+                        activeSession = appData.activeSession || null;
                         saveToLocalStorage();
                         alert("Data successfully imported!");
                         switchTab(currentTab);
